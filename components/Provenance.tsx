@@ -47,6 +47,8 @@ th:first-child,td:first-child{text-align:left}
 th{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#5f6980;font-weight:600}
 .foot{margin-top:44px;border-top:1px solid #e4e7f0;padding-top:14px;font-size:11.5px;color:#8b93a7}
 .chart{width:100%;height:400px}
+.chart-fallback{display:flex;align-items:center;justify-content:center;height:100%;
+  border:1px dashed #e4e7f0;border-radius:10px;color:#5f6980;font-size:12.5px;text-align:center;padding:0 24px}
 `;
 
 function escapeHtml(s: string): string {
@@ -91,8 +93,8 @@ function buildReportHtml(blocks: ReportBlock[], meta: { title: string; subtitle:
         );
         if (b.figure) {
           charts.push(
-            `Plotly.newPlot(${JSON.stringify(id)}, ${JSON.stringify(b.figure.data)}, ` +
-              `${JSON.stringify({ ...b.figure.layout, autosize: true, height: 400 })}, {displayModeBar:false,responsive:true});`,
+            `draw(${JSON.stringify(id)}, ${JSON.stringify(b.figure.data)}, ` +
+              `${JSON.stringify({ ...b.figure.layout, autosize: true, height: 400 })});`,
           );
         }
         break;
@@ -122,7 +124,24 @@ function buildReportHtml(blocks: ReportBlock[], meta: { title: string; subtitle:
     `<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script></head><body>` +
     body.join("") +
     `<div class="foot">${escapeHtml(meta.footer)}</div>` +
-    `<script>${charts.join("\n")}</script></body></html>`
+    // The chart library is fetched from a CDN. A reader opening this file
+    // offline, or behind a network that blocks it, should get the report with a
+    // plain explanation in place of each chart rather than a broken page.
+    `<script>
+function draw(id, data, layout) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  if (typeof Plotly === "undefined") {
+    el.innerHTML = '<div class="chart-fallback">This chart needs the plotting library, which could not be ' +
+      'loaded from the network. The figures behind it are described in the caption below.</div>';
+    return;
+  }
+  Plotly.newPlot(el, data, layout, { displayModeBar: false, responsive: true });
+}
+window.addEventListener("load", function () {
+${charts.join("\n")}
+});
+</script></body></html>`
   );
 }
 

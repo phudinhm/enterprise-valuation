@@ -5,7 +5,7 @@
 // one click, and the reader can see what else is available without opening
 // anything.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiGet, clearApiCache } from "@/lib/useApi";
 import {
   APP_NAME, APP_TAGLINE, DATA_SOURCE, DISPLAY_CURRENCIES, MARKETS, MODULES,
@@ -38,7 +38,13 @@ export default function Sidebar({ state, update, onRefresh }: SidebarProps) {
   const [results, setResults] = useState<SearchHit[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  // On a phone the controls stack above the report, so starting expanded lands
+  // the reader on the inputs rather than on the analysis they asked for. Desktop
+  // keeps them open, where they cost nothing.
   const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    setCollapsed(window.matchMedia("(max-width: 980px)").matches);
+  }, []);
 
   async function runSearch() {
     const q = query.trim();

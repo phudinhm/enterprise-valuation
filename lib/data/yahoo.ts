@@ -39,9 +39,12 @@ async function negotiate(): Promise<Session | null> {
       redirect: "follow",
     }).catch(() => null);
 
-    const raw = seed?.headers.get("set-cookie") ?? "";
+    // getSetCookie keeps multiple Set-Cookie headers separate; the combined
+    // header string cannot be split reliably, because cookie values may
+    // themselves contain commas.
+    const headers = seed?.headers as (Headers & { getSetCookie?: () => string[] }) | undefined;
+    const raw = headers?.getSetCookie?.() ?? (headers?.get("set-cookie") ? [headers.get("set-cookie")!] : []);
     const cookie = raw
-      .split(/,(?=[^;]+?=)/)
       .map((c) => c.split(";")[0].trim())
       .filter(Boolean)
       .join("; ");
