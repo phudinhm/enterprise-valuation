@@ -283,6 +283,11 @@ export const MARKET_POOLS: Record<string, string[]> = {
 // Share counts and rates live in the statements alongside monetary items;
 // multiplying them by an FX rate would turn a share count into nonsense. These
 // lines are left untouched on conversion.
+/** Lines reported per share rather than in whole currency units. They need
+ *  decimals: an EPS of 6.08 rounded to "6" tells the reader nothing, and its
+ *  year-on-year change rounds to "-0". */
+export const PER_SHARE_ITEMS = new Set(["Basic EPS", "Diluted EPS"]);
+
 export const NON_CURRENCY_ITEMS = new Set([
   "Basic Average Shares", "Diluted Average Shares", "Share Issued",
   "Ordinary Shares Number", "Treasury Shares Number", "Tax Rate For Calcs",

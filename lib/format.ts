@@ -64,11 +64,16 @@ export function ratio(v: Num, dp = 2, suffix = "x"): string {
   return isNum(v) ? `${group(v, dp)}${suffix}` : NA;
 }
 
+/** Three-letter month abbreviations, fixed rather than taken from the runtime
+ *  locale: ICU builds disagree ("Sep" vs "Sept"), and a chart axis that changes
+ *  between local and deployed renders is a bug that is hard to see. */
+export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 export function fmtDate(d: string | number | Date | null | undefined): string {
   if (d === null || d === undefined || d === "") return NA;
   const dt = d instanceof Date ? d : new Date(d);
   if (Number.isNaN(dt.getTime())) return NA;
-  return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+  return `${String(dt.getUTCDate()).padStart(2, "0")} ${MONTHS[dt.getUTCMonth()]} ${dt.getUTCFullYear()}`;
 }
 
 /** Convert a monetary figure into the display currency. Returns null when the

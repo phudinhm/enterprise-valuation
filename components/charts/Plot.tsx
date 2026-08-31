@@ -59,6 +59,10 @@ export function styledLayout(
     linecolor: theme.border,
     tickfont: { size: 12, color: theme.muted },
     title: { font: { size: 12.5, color: theme.muted } },
+    // Let the chart reserve space for the widest tick label it actually draws.
+    // A fixed margin is sized for the typical label, so one wider value (a
+    // "100B" among "94B"s) overprints the axis title.
+    automargin: true,
   };
   const merge = (key: string) => {
     const existing = (base[key] ?? {}) as Record<string, unknown>;

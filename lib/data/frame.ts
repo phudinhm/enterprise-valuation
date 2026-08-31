@@ -2,7 +2,7 @@
 // used. Periods run oldest-first, exactly as `_norm_stmt` produced them, so
 // `.at(-1)` is always the latest reported period.
 
-import { isNum, type Num } from "@/lib/format";
+import { isNum, MONTHS, type Num } from "@/lib/format";
 import { NON_CURRENCY_ITEMS } from "@/lib/constants";
 
 export interface Statement {
@@ -152,7 +152,7 @@ export function yearLabels(periods: string[], basis = "Annual"): string[] {
     const d = new Date(p);
     if (Number.isNaN(d.getTime())) return String(p).slice(0, 10);
     if (basis === "Quarterly") {
-      return d.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
+      return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
     }
     return `FY${d.getUTCFullYear()}`;
   });

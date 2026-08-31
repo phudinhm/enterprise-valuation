@@ -69,11 +69,15 @@ export function bars(
 }
 
 /** Two y-axes on one plot: the second axis is declared as an overlay of the
- *  first so both series share the same x grid. */
+ *  first so both series share the same x grid.
+ *
+ *  The starting margins leave room for a right-hand axis; the axes themselves
+ *  carry `automargin`, so the final width adapts to the labels actually drawn. */
 export function secondaryAxisLayout(leftTitle: string, rightTitle: string): PlotLayout {
   return {
     yaxis: { title: leftTitle },
     yaxis2: { title: rightTitle, overlaying: "y", side: "right", showgrid: false },
+    margin: { l: 70, r: 70, t: 30, b: 44 },
   };
 }
 

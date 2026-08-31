@@ -10,7 +10,7 @@ import Figure from "@/components/ui/Figure";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import { waterfall, CATEGORY_AXIS, line, csvFrom } from "@/components/modules/shared";
 import { LINE_ITEMS, SECTOR_COST_NOTES } from "@/lib/glossary";
-import { filingSource } from "@/lib/constants";
+import { filingSource, PER_SHARE_ITEMS } from "@/lib/constants";
 import {
   col, isEmpty, last, latestRow, tailOne, toDisplay, ttmFromQuarters, yearLabels,
 } from "@/lib/data/frame";
@@ -130,7 +130,7 @@ export default function FinancialStatements(props: ModuleProps) {
         isEmpty(incD) ? (
           <EmptyState message="No income statement on this basis." />
         ) : (
-          <div className="row wide-left">
+          <div className="stack">
             <div className="stack">
               <StatementBlock
                 statement={incD}
@@ -167,7 +167,7 @@ export default function FinancialStatements(props: ModuleProps) {
         isEmpty(bsD) ? (
           <EmptyState message="No balance sheet on this basis." />
         ) : (
-          <div className="row wide-left">
+          <div className="stack">
             <div className="stack">
               <StatementBlock
                 statement={bsD}
@@ -313,11 +313,12 @@ export default function FinancialStatements(props: ModuleProps) {
       };
     });
 
-    const fmtCell = (v: number | null): string => {
+    const fmtCell = (v: number | null, name?: string): string => {
       if (!isNum(v)) return NA;
       if (view === "Common size") return `${v.toFixed(1)}%`;
       if (view === "Growth") return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
-      return v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+      const dp = name && PER_SHARE_ITEMS.has(name) ? 2 : 0;
+      return v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
     };
 
     const columns: Column<Row>[] = [
@@ -325,7 +326,7 @@ export default function FinancialStatements(props: ModuleProps) {
       ...labels.map((label, i) => ({
         key: `p${i}`,
         header: label,
-        render: (r: Row) => fmtCell(r.cells[i]),
+        render: (r: Row) => fmtCell(r.cells[i], r.name),
       })),
     ];
 
@@ -344,7 +345,11 @@ export default function FinancialStatements(props: ModuleProps) {
       columns.push({
         key: "change",
         header: "Change",
-        render: (r) => (isNum(r.change) ? `${r.change >= 0 ? "+" : ""}${r.change.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : NA),
+        render: (r) => {
+          if (!isNum(r.change)) return NA;
+          const dp = PER_SHARE_ITEMS.has(r.name) ? 2 : 0;
+          return `${r.change >= 0 ? "+" : ""}${r.change.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
+        },
       });
       columns.push({
         key: "changePct",
@@ -374,12 +379,12 @@ export default function FinancialStatements(props: ModuleProps) {
     const below = isNum(opInc) && isNum(net) ? -(opInc - net) : 0;
 
     return (
-      <div>
+      <div style={{ marginTop: 18 }}>
         <label className="field">Bridge period</label>
         <select
           value={index}
           onChange={(e) => setBridgeIndex(Number(e.target.value))}
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 10, maxWidth: 220 }}
         >
           {labels.map((label, i) => (
             <option key={label} value={i}>
@@ -411,6 +416,7 @@ export default function FinancialStatements(props: ModuleProps) {
   // --- balance sheet side charts --------------------------------------------
 
   function BalanceCharts() {
+    // Rendered full width beneath the tables, so both charts get real room.
     const latest = latestRow(bsD);
     const ca = latest["Current Assets"] ?? 0;
     const ta = latest["Total Assets"] ?? 0;
@@ -423,7 +429,7 @@ export default function FinancialStatements(props: ModuleProps) {
         : null;
 
     return (
-      <div className="stack">
+      <div className="row two">
         <Figure
           title="Asset mix"
           theme={theme}
