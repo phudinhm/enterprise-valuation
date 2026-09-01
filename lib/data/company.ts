@@ -285,8 +285,17 @@ export async function loadCompany(ticker: string): Promise<LoadCompanyResult> {
   }
 
   if (!isNum(price) && isNum(merged.currentPrice)) price = merged.currentPrice as number;
-  if (!isNum(price) || !Object.keys(merged).length) {
-    return { company: null, reason: "no usable data" };
+
+  // A missing price used to fail the whole company, which threw away the
+  // statements alongside it. When the quote and price endpoints are throttled
+  // but the filings still answer, the statement-driven modules are perfectly
+  // usable — so the load only fails when there is nothing at all to show.
+  const hasStatements = !isEmpty(annual.inc) || !isEmpty(annual.bs) || !isEmpty(annual.cf);
+  if (!isNum(price) && !hasStatements) {
+    const why = notes.errors.length
+      ? `every source failed — ${notes.errors[0]}`
+      : "no price and no statements were returned";
+    return { company: null, reason: why };
   }
 
   const shares = pickNum(merged, "sharesOutstanding", "impliedSharesOutstanding");

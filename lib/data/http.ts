@@ -39,6 +39,24 @@ export interface GetOptions {
   timeoutMs?: number;
 }
 
+/** Carries the upstream status so callers can tell rate limiting apart from a
+ *  missing symbol, and honour a Retry-After when one is offered. */
+export class HttpError extends Error {
+  constructor(readonly status: number, readonly host: string, readonly retryAfterMs: number | null) {
+    super(`HTTP ${status} for ${host}`);
+    this.name = "HttpError";
+  }
+}
+
+function retryAfterMs(res: Response): number | null {
+  const header = res.headers.get("retry-after");
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.min(seconds * 1000, 10000);
+  const at = Date.parse(header);
+  return Number.isNaN(at) ? null : Math.min(Math.max(at - Date.now(), 0), 10000);
+}
+
 async function request(url: string, opts: GetOptions = {}): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 12000);
@@ -58,17 +76,19 @@ async function request(url: string, opts: GetOptions = {}): Promise<Response> {
 
 export async function getJson<T = unknown>(url: string, opts: GetOptions = {}): Promise<T> {
   const res = await request(url, opts);
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${new URL(url).host}`);
+  if (!res.ok) throw new HttpError(res.status, new URL(url).host, retryAfterMs(res));
   return (await res.json()) as T;
 }
 
 export async function getText(url: string, opts: GetOptions = {}): Promise<string> {
   const res = await request(url, opts);
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${new URL(url).host}`);
+  if (!res.ok) throw new HttpError(res.status, new URL(url).host, retryAfterMs(res));
   return await res.text();
 }
 
-/** Retry a transient failure once. Anything that fails twice is reported. */
+/** Retry a transient failure. A 429 waits out the Retry-After the server named,
+ *  where one is offered; a 4xx that is not rate limiting is not retried at all,
+ *  because a missing symbol will still be missing on the second attempt. */
 export async function retry<T>(fn: () => Promise<T>, attempts = 2, pauseMs = 400): Promise<T> {
   let lastError: unknown;
   for (let i = 0; i < attempts; i++) {
@@ -76,7 +96,11 @@ export async function retry<T>(fn: () => Promise<T>, attempts = 2, pauseMs = 400
       return await fn();
     } catch (err) {
       lastError = err;
-      if (i + 1 < attempts) await new Promise((r) => setTimeout(r, pauseMs * (i + 1)));
+      if (i + 1 >= attempts) break;
+      const http = err instanceof HttpError ? err : null;
+      if (http && http.status !== 429 && http.status >= 400 && http.status < 500) break;
+      const wait = http?.retryAfterMs ?? pauseMs * (i + 1);
+      await new Promise((r) => setTimeout(r, wait));
     }
   }
   throw lastError;

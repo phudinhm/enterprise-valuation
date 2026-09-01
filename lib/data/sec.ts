@@ -12,7 +12,15 @@ import type { Statement, Statements } from "@/lib/data/frame";
 import { EMPTY_STATEMENT, EMPTY_STATEMENTS } from "@/lib/data/frame";
 import { completeStatements } from "@/lib/data/yahoo";
 
-const SEC_UA = "Investment Terminal research app (contact via repository)";
+// The SEC rejects requests whose User-Agent does not declare who is calling and
+// how to reach them, and a non-conforming one is answered with 403 rather than
+// data — which is exactly what the deployed app was getting. The format they ask
+// for is "Name contact@domain". Set SEC_USER_AGENT to your own contact address:
+// the default below is honest about being unattributed, but a real address is
+// what their fair-access policy actually expects.
+const SEC_UA =
+  process.env.SEC_USER_AGENT?.trim() ||
+  "Investment Terminal (open-source equity research tool) contact@example.com";
 
 // XBRL concepts mapped onto the line-item names the rest of the app expects, so
 // a statement rebuilt from EDGAR is indistinguishable downstream.

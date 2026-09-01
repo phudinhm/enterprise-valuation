@@ -8,7 +8,8 @@ import { Section, SubHead, Note, EmptyState, Caption, Loading, Field } from "@/c
 import Figure from "@/components/ui/Figure";
 import DataTable, { type Column } from "@/components/ui/DataTable";
 import { useApi } from "@/lib/useApi";
-import { asPct, isNum, money, pct, pickNum, price as fmtPrice, ratio, safeDiv, NA } from "@/lib/format";
+import {
+  conv, asPct, isNum, money, pct, pickNum, price as fmtPrice, ratio, safeDiv, NA } from "@/lib/format";
 import { median, quantile, stdev, mean } from "@/lib/data/frame";
 import type { ModuleProps } from "@/components/modules/types";
 import type { PeerRow } from "@/lib/data/types";
@@ -92,7 +93,7 @@ export default function PeerComparables({ co, fx, sym, targetCurrency, theme, ex
   const field = useMemo<FieldRow[]>(() => {
     const shares = co.shares ?? 1;
     const netDebt = co.netDebt * fx;
-    const curPrice = (co.price ?? 0) * fx;
+    const curPrice = conv(co.price, fx);
     const revenue = (pickNum(co.info, "totalRevenue") ?? 0) * fx;
     const ebitda = (pickNum(co.info, "ebitda") ?? 0) * fx;
 
@@ -122,7 +123,7 @@ export default function PeerComparables({ co, fx, sym, targetCurrency, theme, ex
 
   const avgUp = mean(field.map((f) => f.upside));
   const spread = stdev(field.map((f) => f.upside).filter(isNum) as number[], 1);
-  const curPrice = (co.price ?? 0) * fx;
+  const curPrice = conv(co.price, fx);
 
   const columns: Column<PeerRow>[] = [
     { key: "ticker", header: "Ticker", render: (r) => r.ticker, align: "left" },

@@ -8,7 +8,8 @@ import { Section, KpiGrid, Note, EmptyState } from "@/components/ui/primitives";
 import Figure from "@/components/ui/Figure";
 import { bars, line, waterfall, CATEGORY_AXIS, csvFrom } from "@/components/modules/shared";
 import { col, isEmpty, last, toDisplay, yearLabels } from "@/lib/data/frame";
-import { asPct, isNum, money, pickNum, price as fmtPrice, ratio, safeDiv, toneFor } from "@/lib/format";
+import {
+  conv, asPct, isNum, money, pickNum, price as fmtPrice, ratio, safeDiv, toneFor } from "@/lib/format";
 import type { ModuleProps } from "@/components/modules/types";
 
 export default function CashFlowQuality({ co, fx, sym, theme, explainOpen }: ModuleProps) {
@@ -39,10 +40,12 @@ export default function CashFlowQuality({ co, fx, sym, theme, explainOpen }: Mod
   const divPaid = Math.abs(last(cfD, "Cash Dividends Paid") ?? 0);
   const buyback = Math.abs(last(cfD, "Repurchase Of Capital Stock") ?? 0);
 
-  const evMcap = (co.marketCap ?? 0) * fx;
+  const evMcap = conv(co.marketCap, fx);
   const evDebt = (pickNum(co.info, "totalDebt") ?? 0) * fx;
   const evCash = (pickNum(co.info, "totalCash") ?? 0) * fx;
-  const evTotal = evMcap + evDebt - evCash;
+  // Without a market capitalisation there is no enterprise value to bridge to,
+  // so that section is withheld rather than drawn from a zero.
+  const evTotal = isNum(evMcap) ? evMcap + evDebt - evCash : null;
   const netPos = evDebt - evCash;
 
   const intensityWord =
@@ -82,7 +85,7 @@ export default function CashFlowQuality({ co, fx, sym, theme, explainOpen }: Mod
           {
             label: "FCF per share",
             value: fmtPrice(safeDiv(lFcf, co.shares), sym),
-            sub: `Price is ${ratio(safeDiv((co.price ?? 0) * fx, safeDiv(lFcf, co.shares)))} of it`,
+            sub: `Price is ${ratio(safeDiv(conv(co.price, fx), safeDiv(lFcf, co.shares)))} of it`,
             tone: "flat",
           },
           {
@@ -157,6 +160,12 @@ export default function CashFlowQuality({ co, fx, sym, theme, explainOpen }: Mod
         sub="What it would cost to acquire the whole business rather than just its equity."
       />
 
+      {!isNum(evMcap) ? (
+        <EmptyState
+          message="No market capitalisation is available, so the enterprise value bridge cannot be built."
+          hint="It needs a live quote. The reported cash flow above does not, which is why it is still shown."
+        />
+      ) : (
       <div className="row wide-right">
         <KpiGrid
           record={false}
@@ -187,6 +196,7 @@ export default function CashFlowQuality({ co, fx, sym, theme, explainOpen }: Mod
           layout={{ yaxis: { title: sym } }}
         />
       </div>
+      )}
 
       <Note
         id="cashflow-note"

@@ -10,7 +10,8 @@ import DataTable from "@/components/ui/DataTable";
 import { waterfall } from "@/components/modules/shared";
 import { capmWacc, dcf, effectiveTaxRate, grahamNumber, impliedCostOfDebt, impliedGrowth, lynchValue } from "@/lib/analytics/valuation";
 import { last, median, toDisplay } from "@/lib/data/frame";
-import { asPct, clamp, isNum, money, pickNum, price as fmtPrice, ratio, safeDiv, toneFor } from "@/lib/format";
+import {
+  conv, asPct, clamp, isNum, money, pickNum, price as fmtPrice, ratio, safeDiv, toneFor } from "@/lib/format";
 import type { ModuleProps } from "@/components/modules/types";
 
 const FCF_BASES = ["Latest", "Normalised", "Custom"] as const;
@@ -82,7 +83,8 @@ export default function IntrinsicValuation({ co, extras, fx, sym, targetCurrency
 
   const shares = co.shares;
   const netDebtDisp = co.netDebt * fx;
-  const curPrice = (co.price ?? 0) * fx;
+  // Null rather than zero: a missing quote must not read as a free company.
+  const curPrice = conv(co.price, fx);
 
   const result = useMemo(
     () => dcf(baseFcf, g1, years1, g2, wacc, termG, netDebtDisp, shares),
@@ -469,7 +471,11 @@ export default function IntrinsicValuation({ co, extras, fx, sym, targetCurrency
                 orientation: "h",
                 x: validMethods.map(([, v]) => v),
                 y: validMethods.map(([k]) => k),
-                marker: { color: validMethods.map(([, v]) => (v > curPrice ? theme.success : theme.danger)) },
+                marker: {
+                  color: validMethods.map(([, v]) =>
+                    isNum(curPrice) ? (v > curPrice ? theme.success : theme.danger) : theme.accentSoft,
+                  ),
+                },
                 text: validMethods.map(([, v]) => fmtPrice(v, sym)),
                 textposition: "outside",
                 opacity: 0.85,
@@ -478,12 +484,13 @@ export default function IntrinsicValuation({ co, extras, fx, sym, targetCurrency
             layout={{
               xaxis: { title: `Implied value per share (${sym})` },
               margin: { l: 190, r: 80, t: 26, b: 44 },
-              shapes: [
-                { type: "line", x0: curPrice, x1: curPrice, yref: "paper", y0: 0, y1: 1, line: { dash: "dash", color: theme.text, width: 2 } },
-              ],
-              annotations: [
-                { x: curPrice, yref: "paper", y: 1, text: "Market price", showarrow: false, yanchor: "bottom", font: { size: 11.5, color: theme.text } },
-              ],
+              // The market-price reference only exists when there is a quote.
+              shapes: isNum(curPrice)
+                ? [{ type: "line", x0: curPrice, x1: curPrice, yref: "paper", y0: 0, y1: 1, line: { dash: "dash", color: theme.text, width: 2 } }]
+                : [],
+              annotations: isNum(curPrice)
+                ? [{ x: curPrice, yref: "paper", y: 1, text: "Market price", showarrow: false, yanchor: "bottom", font: { size: 11.5, color: theme.text } }]
+                : [],
             }}
             csv={{ columns: ["Method", "Implied value"], rows: validMethods.map(([k, v]) => [k, v]) }}
           />

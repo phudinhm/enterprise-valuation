@@ -36,7 +36,14 @@ export function stooqSymbol(ticker: string): string | null {
 
 function parseCsv(text: string): PriceBar[] {
   const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2 || !lines[0].includes(",")) return [];
+  // Stooq answers 200 with a plain-text message rather than an error status when
+  // it will not serve you — most often a daily-hit limit reached by whichever
+  // other tenant shares this egress address. Reporting that as "no rows" hides
+  // the only fact worth knowing, so it is raised instead.
+  if (lines.length < 2 || !lines[0].includes(",")) {
+    const body = text.trim().slice(0, 120) || "empty response";
+    throw new Error(`Stooq did not return CSV: ${body}`);
+  }
   const header = lines[0].split(",").map((h) => h.trim());
   const idx = (name: string) => header.indexOf(name);
   const iDate = idx("Date");

@@ -50,7 +50,7 @@ export default function ExecutiveDashboard(props: ModuleProps) {
   const summary = [
     `**${co.name}** is a ${co.industry !== NA ? co.industry.toLowerCase() : "diversified"} business in the`,
     `${co.sector} sector, capitalised at **${money(conv(co.marketCap, fx), sym)}** and trading at`,
-    `**${fmtPrice((co.price ?? 0) * fx, sym)}**.`,
+    `**${fmtPrice(conv(co.price, fx), sym)}**.`,
     "",
     `- **What the market pays.** ${isNum(pe) && pe > 0 ? `A trailing P/E of ${ratio(pe)}` : "Earnings are negative or unreported, so P/E is not meaningful"}` +
       `${fcfYield !== null ? ` and a free cash flow yield of ${asPct(fcfYield)}` : ""}.` +
@@ -517,7 +517,7 @@ export default function ExecutiveDashboard(props: ModuleProps) {
     const divPaid = Math.abs(last(cfD, "Cash Dividends Paid") ?? 0);
     const buyback = Math.abs(last(cfD, "Repurchase Of Capital Stock") ?? 0);
     const fcfNow = (co.baseFcf ?? 0) * fx;
-    const mcapNow = (co.marketCap ?? 0) * fx;
+    const mcapNow = conv(co.marketCap, fx);
     const buybackYield = safeDiv(buyback, mcapNow);
     const totalYield = (divYield ?? 0) + (buybackYield ?? 0);
     const cover = divPaid ? safeDiv(fcfNow, divPaid) : null;

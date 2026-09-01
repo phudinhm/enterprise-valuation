@@ -9,7 +9,8 @@ import { Section, KpiGrid, Note, EmptyState } from "@/components/ui/primitives";
 import Figure from "@/components/ui/Figure";
 import { bars, line, CATEGORY_AXIS, csvFrom } from "@/components/modules/shared";
 import { col, dropna, isEmpty, seriesWithPeriods, toDisplay, yearLabels } from "@/lib/data/frame";
-import { asPct, cagr, isNum, money, price as fmtPrice, safeDiv, toneFor } from "@/lib/format";
+import {
+  conv, asPct, cagr, isNum, money, price as fmtPrice, safeDiv, toneFor } from "@/lib/format";
 import type { ModuleProps } from "@/components/modules/types";
 
 export default function Dilution({ co, fx, sym, theme, explainOpen }: ModuleProps) {
@@ -57,7 +58,7 @@ export default function Dilution({ co, fx, sym, theme, explainOpen }: ModuleProp
   const adjFcf = isNum(fcf) && isNum(sbc) ? fcf - sbc : fcf;
   const fcfPs = safeDiv(fcf, shares);
   const adjFcfPs = safeDiv(adjFcf, shares);
-  const priceNow = (co.price ?? 0) * fx;
+  const priceNow = conv(co.price, fx);
 
   // Reported free cash flow beside the same figure with stock compensation
   // subtracted rather than added back.

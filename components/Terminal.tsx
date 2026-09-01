@@ -17,7 +17,7 @@ import {
   APP_NAME, DATA_SOURCE, INTERVALS, MARKETS, MODULES, currencySymbol, marketLabel,
   moduleToSlug, periodLabel, slugToModule, type StatementBasis,
 } from "@/lib/constants";
-import { asPct, isNum, monogram, price as fmtPrice, pickNum } from "@/lib/format";
+import { asPct, isNum, monogram, price as fmtPrice, pickNum, NA } from "@/lib/format";
 import { computeExtras } from "@/lib/analytics/scorecard";
 import type { Company } from "@/lib/data/types";
 
@@ -158,6 +158,15 @@ export default function Terminal() {
                 </Banner>
               ) : null}
 
+              {!isNum(company.price) ? (
+                <Banner tone="warn">
+                  No price could be fetched for {company.ticker}, so anything derived from it — valuation
+                  multiples, the DCF, charts and returns — is unavailable. The reported statements did load,
+                  so the statement-driven modules below are complete. Run <b>Check data sources</b> in the
+                  sidebar to see which provider is refusing.
+                </Banner>
+              ) : null}
+
               <DerivedNotice company={company} />
 
               <ModuleHost
@@ -208,7 +217,8 @@ function CompanyHeader({
   company: Company; fx: number; sym: string; targetCurrency: string; nativeCurrency: string;
   themeSuccess: string; themeDanger: string;
 }) {
-  const price = (company.price ?? 0) * fx;
+  const hasPrice = isNum(company.price);
+  const price = hasPrice ? (company.price as number) * fx : null;
   const prev = company.previousClose ?? company.price ?? 0;
   const change = (company.price ?? 0) - prev;
   const changePct = prev ? (change / prev) * 100 : 0;
@@ -237,14 +247,20 @@ function CompanyHeader({
           </div>
         </div>
         <div className="px-box">
-          <div className="px-value" style={{ color: colour }}>
-            {fmtPrice(price, sym)}
+          <div className="px-value" style={{ color: hasPrice ? colour : "var(--faint)" }}>
+            {hasPrice ? fmtPrice(price, sym) : NA}
           </div>
-          <div className="px-chg" style={{ color: colour }}>
-            {(change * fx).toFixed(2)} ({changePct >= 0 ? "+" : ""}
-            {changePct.toFixed(2)}%)
-          </div>
-          <div className="px-meta">Previous close {fmtPrice(prev * fx, sym)}</div>
+          {hasPrice ? (
+            <>
+              <div className="px-chg" style={{ color: colour }}>
+                {(change * fx).toFixed(2)} ({changePct >= 0 ? "+" : ""}
+                {changePct.toFixed(2)}%)
+              </div>
+              <div className="px-meta">Previous close {fmtPrice(prev * fx, sym)}</div>
+            </>
+          ) : (
+            <div className="px-meta">No quote available</div>
+          )}
         </div>
       </div>
 
