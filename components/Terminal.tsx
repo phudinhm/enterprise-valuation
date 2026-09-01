@@ -121,13 +121,24 @@ export default function Terminal() {
           ) : loading ? (
             <Loading label={`Loading ${state.ticker}…`} />
           ) : error || !company ? (
-            <EmptyState
-              message={`No usable data for “${state.ticker}”`}
-              hint={
-                "The symbol may be delisted, mistyped, or missing its exchange suffix " +
-                "(for example BMW.DE rather than BMW). The sidebar search resolves names to symbols."
-              }
-            />
+            <>
+              <EmptyState
+                message={`No usable data for “${state.ticker}”`}
+                hint={
+                  "The symbol may be delisted, mistyped, or missing its exchange suffix " +
+                  "(for example BMW.DE rather than BMW). The sidebar search resolves names to symbols."
+                }
+              />
+              {/* The same blank page appears whether the symbol is wrong or the
+                  providers are refusing this deployment. Only one of those is
+                  the reader's to fix, so point at the check that tells them
+                  which it is. */}
+              <Banner tone="warn">
+                If other symbols are also coming back empty, the cause is upstream rather than the symbol.
+                Run <b>Check data sources</b> at the foot of the sidebar, or open <code>/api/health</code>,
+                to see which provider is failing and why.
+              </Banner>
+            </>
           ) : (
             <>
               <CompanyHeader

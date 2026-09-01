@@ -9,11 +9,12 @@ import { useEffect, useState } from "react";
 import { apiGet, clearApiCache } from "@/lib/useApi";
 import {
   APP_NAME, APP_TAGLINE, DATA_SOURCE, DISPLAY_CURRENCIES, MARKETS, MODULES,
-  MODULE_LABELS, PERIODS, STATEMENT_BASES, marketLabel, type StatementBasis,
+  PERIODS, STATEMENT_BASES, marketLabel, type StatementBasis,
 } from "@/lib/constants";
 import { THEME_NAMES, type ThemeName } from "@/lib/theme";
 import type { SearchHit } from "@/lib/data/types";
 import { Field, Segmented } from "@/components/ui/primitives";
+import SourceStatus from "@/components/SourceStatus";
 
 export interface TerminalState {
   ticker: string;
@@ -36,6 +37,7 @@ export interface SidebarProps {
 export default function Sidebar({ state, update, onRefresh }: SidebarProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[] | null>(null);
+  const [attempts, setAttempts] = useState<{ route: string; ok: boolean; detail: string }[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   // On a phone the controls stack above the report, so starting expanded lands
@@ -51,10 +53,15 @@ export default function Sidebar({ state, update, onRefresh }: SidebarProps) {
     if (q.length < 2) return;
     setSearching(true);
     try {
-      const data = await apiGet<{ results: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`);
+      const data = await apiGet<{
+        results: SearchHit[];
+        attempts?: { route: string; ok: boolean; detail: string }[];
+      }>(`/api/search?q=${encodeURIComponent(q)}`);
       setResults(data?.results ?? []);
-    } catch {
+      setAttempts(data?.attempts ?? []);
+    } catch (err) {
       setResults([]);
+      setAttempts([{ route: "request", ok: false, detail: err instanceof Error ? err.message : String(err) }]);
     } finally {
       setSearching(false);
     }
@@ -92,7 +99,10 @@ export default function Sidebar({ state, update, onRefresh }: SidebarProps) {
   return (
     <aside className="sidebar no-print">
       <div className="sidebar-inner">
-        <div className="side-brand">{APP_NAME}</div>
+        <div className="side-head">
+          <div className="side-mark">IT</div>
+          <div className="side-brand">{APP_NAME}</div>
+        </div>
         <div className="side-sub">{APP_TAGLINE}</div>
 
         <button
@@ -144,11 +154,33 @@ export default function Sidebar({ state, update, onRefresh }: SidebarProps) {
               ) : null}
 
               {results && results.length === 0 && !searching ? (
-                <p className="caption">
-                  Nothing came back for that. The search routes are rate-limited from shared hosting and
-                  sometimes return nothing for a company that does exist — try again, or type the symbol with
-                  its market suffix directly (Vinamilk is VNM.VN, Siemens is SIE.DE, Toyota is 7203.T).
-                </p>
+                <>
+                  <p className="caption">
+                    Nothing came back for that. Type the symbol with its market suffix directly if you know it
+                    (Vinamilk is VNM.VN, Siemens is SIE.DE, Toyota is 7203.T).
+                  </p>
+                  {attempts.length ? (
+                    <details className="explain">
+                      <summary>Why the search found nothing</summary>
+                      <div className="status-detail">
+                        {attempts.map((a) => (
+                          <div className="status-row" key={a.route}>
+                            <span className={`status-dot ${a.ok ? "ok" : "bad"}`} style={{ marginTop: 5 }} />
+                            <span>
+                              <span className="status-name">{a.route}</span>
+                              <div className="status-why">{a.detail}</div>
+                            </span>
+                            <span />
+                          </div>
+                        ))}
+                        <p className="caption" style={{ marginTop: 8 }}>
+                          Every route failing means the provider is refusing this deployment rather than the
+                          company being unknown. The data-source check at the foot of this panel confirms which.
+                        </p>
+                      </div>
+                    </details>
+                  ) : null}
+                </>
               ) : null}
 
               <p className="caption">
@@ -191,7 +223,8 @@ export default function Sidebar({ state, update, onRefresh }: SidebarProps) {
                 onClick={() => update({ module: name })}
                 title={MODULES[i][1]}
               >
-                {MODULE_LABELS[i]}
+                <span className="nav-index">{String(i).padStart(2, "0")}</span>
+                <span className="nav-label">{name}</span>
               </button>
             ))}
           </nav>
@@ -260,7 +293,10 @@ export default function Sidebar({ state, update, onRefresh }: SidebarProps) {
           >
             Refresh market data
           </button>
-          <p className="caption">Source: {DATA_SOURCE}</p>
+          <div style={{ marginTop: 8 }}>
+            <SourceStatus />
+          </div>
+          <p className="caption">Primary source: {DATA_SOURCE}, with Stooq and SEC EDGAR behind it.</p>
 
           <div className="foot" style={{ marginTop: 18 }}>
             Ported from the Streamlit original

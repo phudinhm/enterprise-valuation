@@ -29,36 +29,75 @@ let inFlight: Promise<Session | null> | null = null;
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
+/** Hosts that hand out the A1/A3 cookies the crumb endpoint checks. The first
+ *  is the one `yfinance` uses; it answers 404 but still sets the cookie. It is
+ *  unreliable from datacenter address ranges, so the ordinary web front end is
+ *  tried next — it sets the same cookies and is far less likely to be refused. */
+const COOKIE_SEEDS = [
+  "https://fc.yahoo.com",
+  "https://finance.yahoo.com/",
+  "https://www.yahoo.com/",
+];
+
+function cookiesFrom(res: Response | null): string {
+  // getSetCookie keeps multiple Set-Cookie headers separate; the combined
+  // header string cannot be split reliably, because cookie values may
+  // themselves contain commas.
+  const headers = res?.headers as (Headers & { getSetCookie?: () => string[] }) | undefined;
+  const raw = headers?.getSetCookie?.() ?? (headers?.get("set-cookie") ? [headers.get("set-cookie")!] : []);
+  return raw
+    .map((c) => c.split(";")[0].trim())
+    .filter(Boolean)
+    .join("; ");
+}
+
+/** Why the last negotiation failed, surfaced by the diagnostics route. */
+let lastSessionError = "not attempted";
+
+export function sessionDiagnostics(): { hasSession: boolean; crumbLength: number; lastError: string } {
+  return {
+    hasSession: Boolean(session),
+    crumbLength: session?.crumb.length ?? 0,
+    lastError: session ? "" : lastSessionError,
+  };
+}
+
 async function negotiate(): Promise<Session | null> {
-  try {
-    // fc.yahoo.com answers 404/401 but sets the consent cookie the crumb
-    // endpoint requires; the status is deliberately not checked.
-    const seed = await fetch("https://fc.yahoo.com", {
-      headers: { "User-Agent": UA },
-      cache: "no-store",
-      redirect: "follow",
-    }).catch(() => null);
+  for (const seedUrl of COOKIE_SEEDS) {
+    try {
+      const seed = await fetch(seedUrl, {
+        headers: { "User-Agent": UA, Accept: "text/html,*/*" },
+        cache: "no-store",
+        redirect: "follow",
+      }).catch(() => null);
 
-    // getSetCookie keeps multiple Set-Cookie headers separate; the combined
-    // header string cannot be split reliably, because cookie values may
-    // themselves contain commas.
-    const headers = seed?.headers as (Headers & { getSetCookie?: () => string[] }) | undefined;
-    const raw = headers?.getSetCookie?.() ?? (headers?.get("set-cookie") ? [headers.get("set-cookie")!] : []);
-    const cookie = raw
-      .map((c) => c.split(";")[0].trim())
-      .filter(Boolean)
-      .join("; ");
-    if (!cookie) return null;
+      const cookie = cookiesFrom(seed);
+      if (!cookie) {
+        lastSessionError = `no cookie from ${new URL(seedUrl).host}`;
+        continue;
+      }
 
-    const crumb = (
-      await getText(`${QUERY1}/v1/test/getcrumb`, { headers: { Cookie: cookie }, timeoutMs: 8000 })
-    ).trim();
-    if (!crumb || crumb.length > 32 || crumb.includes("<")) return null;
+      const crumb = (
+        await getText(`${QUERY1}/v1/test/getcrumb`, {
+          headers: { Cookie: cookie, Accept: "text/plain,*/*" },
+          timeoutMs: 8000,
+        })
+      ).trim();
 
-    return { cookie, crumb, obtainedAt: Date.now() };
-  } catch {
-    return null;
+      // A valid crumb is a short opaque token. An HTML body means a consent
+      // interstitial was served instead, which is not a crumb.
+      if (!crumb || crumb.length > 32 || crumb.includes("<")) {
+        lastSessionError = `crumb rejected via ${new URL(seedUrl).host}`;
+        continue;
+      }
+
+      lastSessionError = "";
+      return { cookie, crumb, obtainedAt: Date.now() };
+    } catch (err) {
+      lastSessionError = `${new URL(seedUrl).host}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 160);
+    }
   }
+  return null;
 }
 
 async function getSession(force = false): Promise<Session | null> {
@@ -447,7 +486,11 @@ export async function fetchStatements(
 
 // --- search ------------------------------------------------------------------
 
-const ACCEPTED_QUOTE_TYPES = new Set(["EQUITY", "ETF", "INDEX", "MUTUALFUND"]);
+const ACCEPTED_QUOTE_TYPES = new Set([
+  "EQUITY", "ETF", "INDEX", "MUTUALFUND",
+  // The autocomplete service reports display names rather than codes.
+  "S", "E", "I", "M", "STOCKS", "ETFS", "INDICES", "CURRENCY",
+]);
 
 function normHit(symbol: unknown, name: unknown, exchange: unknown, qtype: unknown): SearchHit | null {
   const sym = String(symbol ?? "").trim().toUpperCase();
@@ -464,10 +507,37 @@ interface SearchResponse {
   quotes?: Record<string, unknown>[];
 }
 
-/** Yahoo's search route. Tried on both hosts because they are rate-limited
- *  independently — one throttled endpoint must not make a real company look
- *  nonexistent. */
-export async function searchYahoo(query: string, maxResults = 12): Promise<SearchHit[]> {
+export interface SearchAttempt {
+  route: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface SearchOutcome {
+  hits: SearchHit[];
+  route: string;
+  /** What each route did, so an empty result can say why rather than just
+   *  looking like the company does not exist. */
+  attempts: SearchAttempt[];
+}
+
+interface AutocompleteResponse {
+  ResultSet?: { Result?: Record<string, unknown>[] };
+}
+
+function acceptHits(raw: SearchHit[]): SearchHit[] {
+  return raw.filter((h) => !h.type || ACCEPTED_QUOTE_TYPES.has(h.type));
+}
+
+/** Yahoo's symbol search.
+ *
+ *  Three independent routes, tried in order, because they fail independently:
+ *  the search endpoint with a crumb (what it now expects), the same endpoint
+ *  without one (still open from some address ranges), and the older
+ *  autocomplete service. Only when all three come back empty is the query
+ *  treated as a symbol and probed across every market. */
+export async function searchYahoo(query: string, maxResults = 12): Promise<SearchOutcome> {
+  const attempts: SearchAttempt[] = [];
   const params = new URLSearchParams({
     q: query,
     quotesCount: String(maxResults),
@@ -475,23 +545,74 @@ export async function searchYahoo(query: string, maxResults = 12): Promise<Searc
     listsCount: "0",
     enableFuzzyQuery: "true",
   });
+
+  const parse = (data: SearchResponse): SearchHit[] =>
+    acceptHits(
+      (data.quotes ?? [])
+        .map((q) => normHit(q.symbol, q.shortname ?? q.longname, q.exchange ?? q.exchDisp, q.quoteType))
+        .filter((h): h is SearchHit => Boolean(h)),
+    );
+
+  // 1. The search endpoint, authenticated. Yahoo began requiring a crumb here,
+  //    which is why an unauthenticated call can return 401 and nothing else.
+  try {
+    const data = await getAuthed<SearchResponse>(
+      (crumb) => `${QUERY2}/v1/finance/search?${params}${crumb ? `&crumb=${encodeURIComponent(crumb)}` : ""}`,
+      1800,
+    );
+    const hits = parse(data);
+    attempts.push({ route: "search (authenticated)", ok: hits.length > 0, detail: `${hits.length} hits` });
+    if (hits.length) return { hits, route: "search (authenticated)", attempts };
+  } catch (err) {
+    attempts.push({ route: "search (authenticated)", ok: false, detail: short(err) });
+  }
+
+  // 2. The same endpoint unauthenticated, on both hosts — they are rate-limited
+  //    independently, so one being throttled must not end the search.
   for (const host of [QUERY2, QUERY1]) {
+    const label = `search (${new URL(host).host.split(".")[0]})`;
     try {
       const data = await getJson<SearchResponse>(`${host}/v1/finance/search?${params}`, {
         revalidate: 1800,
         timeoutMs: 8000,
       });
-      const hits = (data.quotes ?? [])
-        .map((q) =>
-          normHit(q.symbol, q.shortname ?? q.longname, q.exchange ?? q.exchDisp, q.quoteType),
-        )
-        .filter((h): h is SearchHit => Boolean(h) && (!h!.type || ACCEPTED_QUOTE_TYPES.has(h!.type)));
-      if (hits.length) return hits;
-    } catch {
-      // Fall through to the next host.
+      const hits = parse(data);
+      attempts.push({ route: label, ok: hits.length > 0, detail: `${hits.length} hits` });
+      if (hits.length) return { hits, route: label, attempts };
+    } catch (err) {
+      attempts.push({ route: label, ok: false, detail: short(err) });
     }
   }
-  return [];
+
+  // 3. The older autocomplete service, which is sometimes still open when the
+  //    search endpoint is not.
+  try {
+    const acParams = new URLSearchParams({
+      query,
+      lang: "en",
+      region: "US",
+      corsDomain: "finance.yahoo.com",
+    });
+    const data = await getJson<AutocompleteResponse>(
+      `${QUERY1}/v6/finance/autocomplete?${acParams}`,
+      { revalidate: 1800, timeoutMs: 8000 },
+    );
+    const hits = acceptHits(
+      (data.ResultSet?.Result ?? [])
+        .map((r) => normHit(r.symbol, r.name, r.exchDisp ?? r.exch, r.typeDisp ?? r.type))
+        .filter((h): h is SearchHit => Boolean(h)),
+    );
+    attempts.push({ route: "autocomplete", ok: hits.length > 0, detail: `${hits.length} hits` });
+    if (hits.length) return { hits, route: "autocomplete", attempts };
+  } catch (err) {
+    attempts.push({ route: "autocomplete", ok: false, detail: short(err) });
+  }
+
+  return { hits: [], route: "none", attempts };
+}
+
+function short(err: unknown): string {
+  return (err instanceof Error ? err.message : String(err)).slice(0, 120);
 }
 
 /** Last resort: treat the query as a symbol and check it against every market
